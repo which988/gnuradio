@@ -23,7 +23,8 @@ import gtk
 import Utils
 import Actions
 
-class TextDisplay(gtk.TextView):
+
+class SimpleTextDisplay(gtk.TextView):
     """A non editable gtk text view."""
 
     def __init__(self, text=''):
@@ -41,10 +42,18 @@ class TextDisplay(gtk.TextView):
         self.set_cursor_visible(False)
         self.set_wrap_mode(gtk.WRAP_WORD_CHAR)
 
-        # Added for scroll locking
-        self.scroll_lock = True
 
-        # Add a signal for populating the popup menu
+class TextDisplay(SimpleTextDisplay):
+
+    def __init__(self, text=''):
+        """
+        TextDisplay constructor.
+
+        Args:
+            text: the text to display (string)
+        """
+        SimpleTextDisplay.__init__(self, text)
+        self.scroll_lock = True
         self.connect("populate-popup", self.populate_popup)
 
     def insert(self, line):
@@ -116,6 +125,7 @@ class TextDisplay(gtk.TextView):
         menu.show_all()
         return False
 
+
 def MessageDialogHelper(type, buttons, title=None, markup=None, default_response=None, extra_buttons=None):
     """
     Create a modal message dialog and run it.
@@ -150,12 +160,15 @@ ERRORS_MARKUP_TMPL="""\
 $encode($err_msg.replace('\t', '  '))
 
 #end for"""
+
+
 def ErrorsDialog(flowgraph): MessageDialogHelper(
     type=gtk.MESSAGE_ERROR,
     buttons=gtk.BUTTONS_CLOSE,
     title='Flow Graph Errors',
     markup=Utils.parse_template(ERRORS_MARKUP_TMPL, errors=flowgraph.get_error_messages()),
 )
+
 
 class AboutDialog(gtk.AboutDialog):
     """A cute little about dialog."""
@@ -170,6 +183,7 @@ class AboutDialog(gtk.AboutDialog):
         self.set_website(platform.get_website())
         self.run()
         self.destroy()
+
 
 def HelpDialog(): MessageDialogHelper(
     type=gtk.MESSAGE_INFO,
@@ -198,8 +212,25 @@ COLORS_DIALOG_MARKUP_TMPL = """\
 #end if
 """
 
-def TypesDialog(platform): MessageDialogHelper(
-    type=gtk.MESSAGE_INFO,
-    buttons=gtk.BUTTONS_CLOSE,
-    title='Types',
-    markup=Utils.parse_template(COLORS_DIALOG_MARKUP_TMPL, colors=platform.get_colors()))
+
+def TypesDialog(platform):
+    MessageDialogHelper(
+        type=gtk.MESSAGE_INFO,
+        buttons=gtk.BUTTONS_CLOSE,
+        title='Types',
+        markup=Utils.parse_template(COLORS_DIALOG_MARKUP_TMPL,
+                                    colors=platform.get_colors())
+    )
+
+
+def MissingXTermDialog(xterm):
+    MessageDialogHelper(
+        type=gtk.MESSAGE_WARNING,
+        buttons=gtk.BUTTONS_OK,
+        title='Warning: missing xterm executable',
+        markup=("The xterm executable {0!r} is missing.\n\n"
+                "You can change this setting in your gnuradio.conf, in "
+                "section [grc], 'xterm_executable'.\n"
+                "\n"
+                "(This message is shown only once)").format(xterm)
+    )

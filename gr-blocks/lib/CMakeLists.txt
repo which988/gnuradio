@@ -143,6 +143,8 @@ list(APPEND gr_blocks_sources
     multiply_const_vcc_impl.cc
     multiply_const_ff_impl.cc
     multiply_const_vff_impl.cc
+    multiply_matrix_cc_impl.cc
+    multiply_matrix_ff_impl.cc
     nlog10_ff_impl.cc
     nop_impl.cc
     null_sink_impl.cc
@@ -202,7 +204,6 @@ list(APPEND gr_blocks_sources
     vector_to_streams_impl.cc
     wavfile_sink_impl.cc
     wavfile_source_impl.cc
-    multiply_matrix_ff_impl.cc
 )
 
 if(ENABLE_GR_CTRLPORT)
@@ -289,11 +290,14 @@ if(ENABLE_TESTING)
 
   include_directories(
     ${GR_BLOCKS_INCLUDE_DIRS}
+    ${GNURADIO_RUNTIME_INCLUDE_DIRS}
     ${CPPUNIT_INCLUDE_DIRS})
   link_directories(${CPPUNIT_LIBRARY_DIRS})
 
   list(APPEND test_gr_blocks_sources
     ${CMAKE_CURRENT_SOURCE_DIR}/test_gr_blocks.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/qa_gr_flowgraph.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/qa_set_msg_handler.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/qa_gr_block.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/qa_gr_top_block.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/qa_gr_hier_block2.cc

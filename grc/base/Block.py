@@ -19,11 +19,14 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA
 
 from . import odict
 from . Constants import ADVANCED_PARAM_TAB, DEFAULT_PARAM_TAB
+from . Constants import BLOCK_FLAG_THROTTLE, BLOCK_FLAG_DISABLE_BYPASS
+from . Constants import BLOCK_ENABLED, BLOCK_BYPASSED, BLOCK_DISABLED
 from Element import Element
 
 from Cheetah.Template import Template
 from UserDict import UserDict
 from itertools import imap
+
 
 class TemplateArg(UserDict):
     """
@@ -46,10 +49,15 @@ class TemplateArg(UserDict):
     def __call__(self):
         return self._param.get_evaluated()
 
-def _get_keys(lst): return [elem.get_key() for elem in lst]
+
+def _get_keys(lst):
+    return [elem.get_key() for elem in lst]
+
+
 def _get_elem(lst, key):
     try: return lst[_get_keys(lst).index(key)]
     except ValueError: raise ValueError, 'Key "%s" not found in %s.'%(key, _get_keys(lst))
+
 
 class Block(Element):
 
@@ -73,6 +81,10 @@ class Block(Element):
         self._name = n.find('name')
         self._key = n.find('key')
         self._category = n.find('category') or ''
+        self._flags = n.find('flags') or ''
+        # Backwards compatibility
+        if n.find('throttle') and BLOCK_FLAG_THROTTLE not in self._flags:
+            self._flags += BLOCK_FLAG_THROTTLE
         self._grc_source = n.find('grc_source') or ''
         self._block_wrapper_path = n.find('block_wrapper_path')
         self._bussify_sink = n.find('bus_sink')
@@ -137,13 +149,15 @@ class Block(Element):
         # indistinguishable from normal GR blocks. Make explicit
         # checks for them here since they have no work function or
         # buffers to manage.
-        is_not_virtual_or_pad = ((self._key != "virtual_source") \
-                                     and (self._key != "virtual_sink") \
-                                     and (self._key != "pad_source") \
-                                     and (self._key != "pad_sink"))
+        is_virtual_or_pad = self._key in (
+            "virtual_source", "virtual_sink", "pad_source", "pad_sink")
         is_variable = self._key.startswith('variable')
 
-        if is_not_virtual_or_pad and not is_variable:
+        # Disable blocks that are virtual/pads or variables
+        if is_virtual_or_pad or is_variable:
+            self._flags += BLOCK_FLAG_DISABLE_BYPASS
+
+        if not (is_virtual_or_pad or is_variable or self._key == 'options'):
             self.get_params().append(self.get_parent().get_parent().Param(
                 block=self,
                 n=odict({'name': 'Block Alias',
@@ -154,7 +168,7 @@ class Block(Element):
                      })
             ))
 
-        if (len(sources) or len(sinks)) and is_not_virtual_or_pad:
+        if (len(sources) or len(sinks)) and not is_virtual_or_pad:
             self.get_params().append(self.get_parent().get_parent().Param(
                     block=self,
                     n=odict({'name': 'Core Affinity',
@@ -164,7 +178,7 @@ class Block(Element):
                              'tab': ADVANCED_PARAM_TAB
                              })
                     ))
-        if len(sources) and is_not_virtual_or_pad:
+        if len(sources) and not is_virtual_or_pad:
             self.get_params().append(self.get_parent().get_parent().Param(
                     block=self,
                     n=odict({'name': 'Min Output Buffer',
@@ -197,7 +211,6 @@ class Block(Element):
                          })
                 ))
 
-
     def back_ofthe_bus(self, portlist):
         portlist.sort(key=lambda p: p._type == 'bus')
 
@@ -205,6 +218,35 @@ class Block(Element):
         buslist = [p for p in ports if p._type == 'bus']
         return buslist or ports
 
+    # Main functions to get and set the block state
+    # Also kept get_enabled and set_enabled to keep compatibility
+    def get_state(self):
+        """
+        Gets the block's current state.
+
+        Returns:
+            ENABLED - 0
+            BYPASSED - 1
+            DISABLED - 2
+        """
+        try: return int(eval(self.get_param('_enabled').get_value()))
+        except: return BLOCK_ENABLED
+
+    def set_state(self, state):
+        """
+        Sets the state for the block.
+
+        Args:
+            ENABLED - 0
+            BYPASSED - 1
+            DISABLED - 2
+        """
+        if state in [BLOCK_ENABLED, BLOCK_BYPASSED, BLOCK_DISABLED]:
+            self.get_param('_enabled').set_value(str(state))
+        else:
+            self.get_param('_enabled').set_value(str(BLOCK_ENABLED))
+
+    # Enable/Disable Aliases
     def get_enabled(self):
         """
         Get the enabled state of the block.
@@ -212,8 +254,7 @@ class Block(Element):
         Returns:
             true for enabled
         """
-        try: return eval(self.get_param('_enabled').get_value())
-        except: return True
+        return not (self.get_state() == BLOCK_DISABLED)
 
     def set_enabled(self, enabled):
         """
@@ -221,8 +262,45 @@ class Block(Element):
 
         Args:
             enabled: true for enabled
+
+        Returns:
+            True if block changed state
         """
-        self.get_param('_enabled').set_value(str(enabled))
+        old_state = self.get_state()
+        new_state = BLOCK_ENABLED if enabled else BLOCK_DISABLED
+        self.set_state(new_state)
+        return old_state != new_state
+
+    # Block bypassing
+    def get_bypassed(self):
+        """
+        Check if the block is bypassed
+        """
+        return self.get_state() == BLOCK_BYPASSED
+
+    def set_bypassed(self):
+        """
+        Bypass the block
+
+        Returns:
+            True if block chagnes state
+        """
+        if self.get_state() != BLOCK_BYPASSED and self.can_bypass():
+            self.set_state(BLOCK_BYPASSED)
+            return True
+        return False
+
+    def can_bypass(self):
+        """ Check the number of sinks and sources and see if this block can be bypassed """
+        # Check to make sure this is a single path block
+        # Could possibly support 1 to many blocks
+        if len(self.get_sources()) != 1 or len(self.get_sinks()) != 1:
+            return False
+        if not (self.get_sources()[0].get_type() == self.get_sinks()[0].get_type()):
+            return False
+        if self.bypass_disabled():
+            return False
+        return True
 
     def __str__(self): return 'Block - %s - %s(%s)'%(self.get_id(), self.get_name(), self.get_key())
 
@@ -239,6 +317,10 @@ class Block(Element):
     def get_children_gui(self): return self.get_ports_gui() + self.get_params()
     def get_block_wrapper_path(self): return self._block_wrapper_path
     def get_comment(self): return self.get_param('comment').get_value()
+
+    def get_flags(self): return self._flags
+    def throtteling(self): return BLOCK_FLAG_THROTTLE in self._flags
+    def bypass_disabled(self): return BLOCK_FLAG_DISABLE_BYPASS in self._flags
 
     ##############################################
     # Access Params

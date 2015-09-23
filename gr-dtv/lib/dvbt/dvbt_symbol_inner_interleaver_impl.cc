@@ -66,9 +66,6 @@ namespace gr {
       else if (i == 1) {
         reg = 0;
       }
-      else if (reg == 2) {
-        reg = 1;
-      }
       else {
         reg = 1;
         for (int k = 3; k <= i; k++) {
@@ -187,7 +184,7 @@ namespace gr {
           // Interleave
           for (int q = 0; q < d_nsize; q++) {
             if (d_symbol_index % 2) {
-                out[blocks + q] = in[blocks + H(q)];
+              out[blocks + q] = in[blocks + H(q)];
             }
             else {
               out[blocks + H(q)] = in[blocks + q];
